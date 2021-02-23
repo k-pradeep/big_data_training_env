@@ -1,0 +1,197 @@
+
+psql -U postgres -c "ALTER SYSTEM SET listen_addresses TO '*'"
+
+psql -U postgres -c "CREATE USER replicator WITH REPLICATION ENCRYPTED PASSWORD 'secret'"
+
+echo "host replication replicator all trust" >> $PGDATA/pg_hba.conf
+
+psql -U postgres -x -c "select * from pg_stat_replication"
+
+ALTER SYSTEM SET wal_level TO 'hot_standby';
+ALTER SYSTEM SET archive_mode TO 'ON';
+ALTER SYSTEM SET max_wal_senders TO '5';
+ALTER SYSTEM SET wal_keep_segments TO '10';
+ALTER SYSTEM SET listen_addresses TO '*';
+ALTER SYSTEM SET hot_standby TO 'ON';
+ALTER SYSTEM SET archive_command TO 'test ! -f /usr/psql_archive_dir/%f && cp %p /usr/psql_archive_dir%f';
+
+should run slave
+pg_basebackup -h pg_primary -U replicator -p 5432 -D $PGDATA -P -Xs -R
+
+standby_mode = 'on'
+primary_conninfo = 'host=192.168.0.28 port=5432 user=replicator password=replicator'
+restore_command = 'cp /path/to/archive/%f %p'
+archive_cleanup_command = 'pg_archivecleanup /usr/psql_archive_dir %r'
+
+
+user service names instead of hostname in docker-compose 
+
+
+
+
+
+
+
+
+
+
+ENTRYPOINT: "/usr/bin/initdb.sh"
+
+Created inidb file but entry point parameter is not accepting it in docker compose file.
+ 
+ 
+ 
+ 
+POSTGRES TABLE CREATION
+
+CREATE TABLE user_event (
+    id        SERIAL CONSTRAINT PRIMARY KEY,
+    user_id   integer NOT NULL,
+    time      timestamp,
+    currency_code text ,
+    );
+	
+#table DDL	
+CREATE TABLE user_event(id SERIAL PRIMARY KEY, user_id integer NOT NULL, time timestamp,
+ currency_code text);
+# sample insert statment
+insert into user_event (user_id, time,currency_code) values(1,localtimestamp,'USD');
+#random data script
+INSERT INTO USER_EVENT(user_id, time,currency_code) SELECT generate_series(1,200), localtimestamp, 'USD';
+#insert statement 20000000
+INSERT INTO USER_EVENT(user_id, time,currency_code) SELECT generate_series(1,2000000), localtimestamp, 'USD'; 
+
+INSERT INTO USER_EVENT(user_id, time,currency_code) SELECT generate_series(2000001,4000000), localtimestamp, 'CAD'; 
+---
+\set AUTOCOMMIT off
+\set ON_ERROR_ROLLBACK on
+
+\echo :AUTOCOMMIT
+
+BEGIN;
+lock table user_event in ACCESS SHARE MODE;
+select pg_sleep(10);
+select count(*) from user_event;
+COMMIT;
+
+One or more users/process can have access share lock on a table but when an update is made unless the transaction gets committed the data will not be reflected.
+Only one user can have access exclusive lock on a table, they can read and write the data in the table. 
+When one user has access exclusive lock , another user cannot get either access share or access exclusive lock 
+--------------
+Hadoop
+/usr/lib/jvm/java-8-openjdk-amd64/
+
+----------------------
+locks
+postgres=# CREATE DATABASE locks_test
+postgres-# use locks_test
+
+entrypoint: ["docker", "cp", "./initdb_primary.sh","pg_primary:/docker-entrypoint-initdb.d/"]
+
+﻿Somehow the docker-compose YAML files are not mounting the files to the docker images and then tried to issue docker cp command which has mounted the file to the docker container. I feel there might be an issue with the laptop that I am currently working on. Still working on the solution stated in the stack overflow link. 
+---------
+Automatic sharding results
+
+
+postgres=# INSERT INTO USER_EVENT(user_id, time,currency_code) SELECT generate_series(1,2000000), localtimestamp, 'USD';
+INSERT 0 2000000
+postgres=# INSERT INTO USER_EVENT(user_id, time,currency_code) SELECT generate_series(2000001,4000000), localtimestamp, 'CAD';
+INSERT 0 2000000
+postgres=# select count(*) from user_event;
+  count
+---------
+ 4000000
+(1 row)
+
+postgres=# select count(*) from user_event_0;
+  count
+---------
+ 2000000
+(1 row)
+
+postgres=# select count(*) from user_event_1;
+  count
+---------
+ 2000000
+(1 row)
+
+-----
+Alternate 1 CORE_CONF_fs_defaultFS=hdfs://namenode:8020
+Alternate 2
+
+hdfs dfs -Dfs.defaultFS=hdfs://namenode:9000 -ls /
+
+hdfs dfs -Dfs.defaultFS=hdfs://namenode:9000 -mkdir /data_1
+
+hdfs dfs -Dfs.defaultFS=hdfs://namenode:9000 -copyFromLocal mock.csv /data_1
+
+hdfs dfs -Dfs.defaultFS=hdfs://namenode:9000 -mkdir /data_2
+
+hdfs dfs -Dfs.defaultFS=hdfs://namenode:9000 -cp /data_1/* /data_2
+
+hdfs dfs -Dfs.defaultFS=hdfs://namenode:9000 -rm -r data_1
+
+
+After killing datanode_3
+
+root@fd22162db316:/usr/src/app# hdfs dfs -Dfs.defaultFS=hdfs://namenode:9000 -copyFromLocal mock.csv /data_1
+2021-03-01 04:10:19,728 INFO sasl.SaslDataTransferClient: SASL encryption trust check: localHostTrusted = false, remoteHostTrusted = false
+2021-03-01 04:10:39,846 INFO hdfs.DataStreamer: Exception in createBlockOutputStream blk_1073741856_1032
+java.io.EOFException: Unexpected EOF while trying to read response from server
+        at org.apache.hadoop.hdfs.protocolPB.PBHelperClient.vintPrefixed(PBHelperClient.java:550)
+        at org.apache.hadoop.hdfs.DataStreamer.createBlockOutputStream(DataStreamer.java:1762)
+        at org.apache.hadoop.hdfs.DataStreamer.nextBlockOutputStream(DataStreamer.java:1679)
+        at org.apache.hadoop.hdfs.DataStreamer.run(DataStreamer.java:716)
+2021-03-01 04:10:39,900 WARN hdfs.DataStreamer: Abandoning BP-599348434-172.19.0.4-1614103982475:blk_1073741856_1032
+2021-03-01 04:10:39,949 WARN hdfs.DataStreamer: Excluding datanode DatanodeInfoWithStorage[172.25.0.5:9866,DS-47f48631-ad5e-43b0-9005-5ae076aa6b2c,DISK]
+2021-03-01 04:10:58,960 INFO hdfs.DataStreamer: Exception in createBlockOutputStream blk_1073741857_1033
+java.net.NoRouteToHostException: No route to host
+        at sun.nio.ch.SocketChannelImpl.checkConnect(Native Method)
+        at sun.nio.ch.SocketChannelImpl.finishConnect(SocketChannelImpl.java:716)
+        at org.apache.hadoop.net.SocketIOWithTimeout.connect(SocketIOWithTimeout.java:206)
+        at org.apache.hadoop.net.NetUtils.connect(NetUtils.java:533)
+        at org.apache.hadoop.hdfs.DataStreamer.createSocketForPipeline(DataStreamer.java:253)
+        at org.apache.hadoop.hdfs.DataStreamer.createBlockOutputStream(DataStreamer.java:1725)
+        at org.apache.hadoop.hdfs.DataStreamer.nextBlockOutputStream(DataStreamer.java:1679)
+        at org.apache.hadoop.hdfs.DataStreamer.run(DataStreamer.java:716)
+2021-03-01 04:10:58,961 WARN hdfs.DataStreamer: Abandoning BP-599348434-172.19.0.4-1614103982475:blk_1073741857_1033
+2021-03-01 04:10:59,030 WARN hdfs.DataStreamer: Excluding datanode DatanodeInfoWithStorage[172.25.0.6:9866,DS-a1d6a86a-5eff-4668-9cff-b12c15b5609c,DISK]
+2021-03-01 04:10:59,098 INFO sasl.SaslDataTransferClient: SASL encryption trust check: localHostTrusted = false, remoteHostTrusted = false
+2021-03-01 04:10:59,119 WARN hdfs.DataStreamer: Slow waitForAckedSeqno took 39479ms (threshold=30000ms). File being written: /data_1/mock.csv._COPYING_, block: BP-599348434-172.19.0.4-1614103982475:blk_1073741858_1034, Write pipeline datanodes: [DatanodeInfoWithStorage[172.25.0.4:9866,DS-4de4f7a1-1d73-403c-a9a7-12fe12c221fa,DISK]].
+
+
+s3
+//Creating S3 Buckets
+/opt/code/localstack # aws s3api create-bucket --bucket data --endpoint-url http://localhost:4566
+//listing files using high level s3 cli command
+/opt/code/localstack # aws s3 ls  --endpoint-url http://localhost:4566
+
+//copying files from local to s3
+aws s3api put-object --bucket data --key mock.csv --body mock.csv --endpoint-url http://localhost:4566
+
+Tagging S3 objects : 
+aws s3api put-object-tagging --bucket data --key mock.csv --tagging '{"TagSet": [{ "Key": "Action", "Value": "S3CLI_Tag" }]}'
+--endpoint-url http://localhost:4566
+
+
+/opt/code/localstack # aws s3api get-object-tagging --bucket data --key mock.csv --endpoint-url http://localhost:4566
+{
+    "TagSet": [
+        {
+            "Key": "Action",
+            "Value": "S3CLI_Tag"
+        }
+    ]
+}
+
+Retrieve objects in a bucket
+ aws s3api get-object --bucket data --key mock.csv mock.csv --endpoint-url http://localhost:4566
+ 
+ Delete objects in a bucket
+ aws s3api delete-object --bucket data --key mock.csv --endpoint-url http://localhost:4566
+ Listing objects after delete
+ 
+/opt/code/localstack # aws s3api list-objects --bucket data --endpoint-url http://localhost:4566
+
+ aws s3api get-object --bucket data --key mock.csv /usr/src/app/mock.csv  --endpoint-url http://lo
+calhost:4566
